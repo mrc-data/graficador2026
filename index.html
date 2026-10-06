@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graficador de radio base</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; font-family: Arial, Helvetica, sans-serif; font-size:13px; color:#222; }
+  #app { display:flex; height:100%; }
+  #side { width:360px; min-width:360px; overflow-y:auto; padding:14px; background:#f6f7f8; border-right:1px solid #ccc; }
+  #map { flex:1; min-width:0; min-height:200px; }
+  h1 { font-size:17px; margin:0 0 4px; }
+  h2 { font-size:12px; margin:16px 0 6px; text-transform:uppercase; letter-spacing:.05em; color:#555; }
+  label { display:block; margin:7px 0 2px; color:#444; font-weight:bold; font-size:12px; }
+  input, select, textarea { width:100%; padding:6px 8px; border:1px solid #bbb; border-radius:5px; font-size:13px; background:#fff; font-family:inherit; }
+  textarea { min-height:90px; resize:vertical; font-family: Consolas, monospace; font-size:12px; }
+  .row { display:flex; gap:8px; }
+  .row > div { flex:1; min-width:0; }
+  .hint { font-size:11px; color:#777; margin-top:3px; line-height:1.4; }
+  .btns { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  button { padding:7px 10px; border:0; border-radius:5px; cursor:pointer; font-size:12px; background:#185FA5; color:#fff; }
+  button:hover { filter:brightness(1.1); }
+  button.sec { background:#e1e4e8; color:#222; }
+  button.warn { background:#c0392b; }
+  button.mini { padding:3px 8px; font-size:11px; }
+  #msg { margin-top:8px; color:#c0392b; font-size:12px; min-height:14px; }
+  #msg.info { color:#0F6E56; }
+  #res, #interRes, #impMsg { margin-top:6px; background:#fff; border:1px solid #ddd; border-radius:6px; padding:8px 10px; line-height:1.6; }
+  #res:empty, #interRes:empty, #impMsg:empty { display:none; }
+  .ok { color:#0F6E56; font-weight:bold; }
+  .no { color:#c0392b; font-weight:bold; }
+  .item { display:flex; align-items:flex-start; gap:8px; background:#fff; border:1px solid #ddd; border-radius:6px; padding:6px 8px; margin-bottom:6px; }
+  .item .sw { width:14px; height:14px; border-radius:3px; flex:none; margin-top:2px; }
+  .item .t { flex:1; min-width:0; line-height:1.45; }
+  .item .acts { display:flex; flex-direction:column; gap:4px; }
+  .item input[type=checkbox] { width:auto; margin:2px 0 0; }
+  details { background:#fff; border:1px solid #ddd; border-radius:6px; padding:6px 10px; }
+  summary { cursor:pointer; font-weight:bold; color:#444; }
+  .pbtns { display:flex; flex-direction:column; gap:4px; margin-top:6px; }
+  @media (max-width:760px) {
+    #app { flex-direction:column-reverse; }
+    #side { width:100%; min-width:0; height:52%; border-right:0; border-top:1px solid #ccc; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="side">
+    <h1>Graficador de radio base</h1>
+    <div class="hint">Dibuja el sector de cobertura de una celda a partir de su azimut y marca la zona probable del terminal móvil.</div>
+
+    <h2>Radio base</h2>
+    <div class="row">
+      <div><label for="codigo">Código de celda</label><input id="codigo" placeholder="Ej: 20551"></div>
+      <div><label for="tipo">Tipo</label><input id="tipo" placeholder="Ej: C"></div>
+    </div>
+    <label for="base">Coordenadas de la radio base</label>
+    <input id="base" placeholder="Ej: -3.26539, -79.93089">
+    <div class="hint">Formato: latitud, longitud (con punto decimal). Se puede pegar tal cual desde Google Maps.</div>
+    <div class="row">
+      <div><label for="azm">Azimut (°)</label><input id="azm" type="number" step="any" min="0" max="360" placeholder="Ej: 30"></div>
+      <div><label for="radio">Radio / densidad (m)</label><input id="radio" type="number" step="any" min="1" placeholder="Ej: 500"></div>
+    </div>
+    <div class="row">
+      <div><label for="ap">Apertura del sector (°)</label><input id="ap" type="number" step="any" min="1" max="360" placeholder="120 (por defecto)"></div>
+      <div><label for="nota">Nota / fecha-hora</label><input id="nota" placeholder="Ej: llamada 14:32"></div>
+    </div>
+    <div class="hint">Apertura vacía = 120° (sector típico). 360° = omnidireccional.</div>
+
+    <h2>Terminal móvil</h2>
+    <label for="term">Coordenadas del terminal (opcional)</label>
+    <input id="term" placeholder="Vacío = se grafica el punto estimado">
+    <div class="hint">Si lo dejas vacío se grafica el punto estimado (centroide del sector).</div>
+
+    <div class="btns">
+      <button id="bGraf">Graficar</button>
+      <button id="bAdd" class="sec">Agregar a la lista</button>
+      <button id="bLimpiar" class="sec">Limpiar formulario</button>
+    </div>
+    <div id="msg"></div>
+
+    <h2>Análisis</h2>
+    <div id="res"></div>
+
+    <h2>Celdas en el mapa</h2>
+    <div id="lista"></div>
+
+    <h2>Intersección de celdas</h2>
+    <div class="hint">Marca con la casilla las celdas que quieras cruzar (mínimo 2). Úsala solo con celdas que atendieron al mismo teléfono en el mismo momento aproximado.</div>
+    <div class="btns">
+      <button id="bInter">Calcular intersección</button>
+      <button id="bInterQ" class="sec">Quitar</button>
+    </div>
+    <div id="interRes"></div>
+
+    <h2>Importar desde Excel o CSV</h2>
+    <details>
+      <summary>Cargar varias celdas de una vez</summary>
+      <div class="hint">Copia las filas desde Excel y pégalas aquí, o abre un archivo CSV. Columnas, en este orden:<br>
+      <b>Código | Tipo | Latitud | Longitud | Azimut | Radio | Apertura | Lat. terminal | Long. terminal | Nota</b><br>
+      Obligatorias: Latitud, Longitud, Azimut y Radio. El resto se puede dejar vacío. La primera fila puede ser el encabezado.</div>
+      <textarea id="impTxt" placeholder="20551;C;-3.26539;-79.93089;30;500;120;-3.255087;-79.926015;Llamada 14:32"></textarea>
+      <div class="btns">
+        <button id="bImp">Cargar datos pegados</button>
+        <button id="bPlantilla" class="sec">Descargar plantilla</button>
+      </div>
+      <label for="fileCsv">O abrir un archivo CSV</label>
+      <input id="fileCsv" type="file" accept=".csv,.txt">
+      <div id="impMsg"></div>
+    </details>
+
+    <h2>Exportar</h2>
+    <div class="row">
+      <div>
+        <label for="dec">Separador decimal del CSV</label>
+        <select id="dec"><option value=".">Punto (-3.26539)</option><option value=",">Coma (-3,26539)</option></select>
+      </div>
+    </div>
+    <div class="btns">
+      <button id="bKml" class="sec">Descargar KML</button>
+      <button id="bCsv" class="sec">Descargar CSV</button>
+      <button id="bVaciar" class="warn">Vaciar lista</button>
+    </div>
+    <div class="hint">KML: se abre en Google Earth. CSV: se abre en Excel y sirve para importar en i2. Los datos no se guardan al cerrar la página: exporta antes de salir.</div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+// ===BEGIN GEO===
+var COLORES = ['#1D9E75', '#D85A30', '#534AB7', '#BA7517', '#D4537E', '#378ADD', '#7A8B1F', '#0E7C86', '#A23B72', '#5C6B73'];
+var R_T = 6371000, RAD = Math.PI / 180;
+
+function esc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function parseNum(s) {
+  if (s === null || s === undefined) return NaN;
+  s = String(s).replace(/\u2212/g, '-').replace(/\s/g, '');
+  if (s === '') return NaN;
+  if (s.indexOf(',') >= 0 && s.indexOf('.') < 0 && s.split(',').length === 2) s = s.replace(',', '.');
+  return /^[-+]?\d+(\.\d+)?$/.test(s) ? parseFloat(s) : NaN;
+}
+
+function mkCoord(lat, lng) {
+  if (isNaN(lat) || isNaN(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat: lat, lng: lng };
+}
+
+function parseCoords(txt) {
+  var n = String(txt || '').replace(/\u2212/g, '-').match(/-?\d+(?:\.\d+)?/g);
+  if (!n || n.length !== 2) return null;
+  return mkCoord(parseFloat(n[0]), parseFloat(n[1]));
+}
+
+function destino(p, brg, dist) {
+  var d = dist / R_T, b = brg * RAD, la1 = p.lat * RAD, lo1 = p.lng * RAD;
+  var la2 = Math.asin(Math.sin(la1) * Math.cos(d) + Math.cos(la1) * Math.sin(d) * Math.cos(b));
+  var lo2 = lo1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la1), Math.cos(d) - Math.sin(la1) * Math.sin(la2));
+  return { lat: la2 / RAD, lng: ((lo2 / RAD + 540) % 360) - 180 };
+}
+
+function distancia(a, b) {
+  var dLat = (b.lat - a.lat) * RAD, dLng = (b.lng - a.lng) * RAD;
+  var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(a.lat * RAD) * Math.cos(b.lat * RAD) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return 2 * R_T * Math.asin(Math.sqrt(h));
+}
+
+function rumbo(a, b) {
+  var y = Math.sin((b.lng - a.lng) * RAD) * Math.cos(b.lat * RAD);
+  var x = Math.cos(a.lat * RAD) * Math.sin(b.lat * RAD) - Math.sin(a.lat * RAD) * Math.cos(b.lat * RAD) * Math.cos((b.lng - a.lng) * RAD);
+  return (Math.atan2(y, x) / RAD + 360) % 360;
+}
+
+function difAng(a, b) { var d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+
+function analizar(c) {
+  var alfa = c.ap * RAD, full = c.ap >= 360;
+  var dCen = full ? 0 : 4 * c.radio * Math.sin(alfa / 2) / (3 * alfa);
+  var cen = full ? c.base : destino(c.base, c.azm, dCen);
+  var area = full ? Math.PI * c.radio * c.radio : 0.5 * c.radio * c.radio * alfa;
+  var r = { cen: cen, dCen: dCen, area: area, esReal: !!c.term, punto: c.term || cen };
+  r.dist = distancia(c.base, r.punto);
+  r.rumbo = rumbo(c.base, r.punto);
+  r.desv = difAng(r.rumbo, c.azm);
+  r.dentro = r.dist <= c.radio && (full || r.desv <= c.ap / 2 || r.dist < 1);
+  return r;
+}
+
+function arco(base, azm, ap, radio) {
+  var full = ap >= 360, n = Math.max(8, Math.ceil(ap / 2)), p = [];
+  var ult = full ? n - 1 : n;
+  if (!full) p.push(base);
+  for (var i = 0; i <= ult; i++) p.push(destino(base, azm - ap / 2 + ap * i / n, radio));
+  if (!full) p.push(base);
+  return p;
+}
+function trayecto(c) { return arco(c.base, c.azm, c.ap, c.radio); }
+
+function piezas(c) {
+  if (c.ap >= 360 || c.ap <= 180) return [arco(c.base, c.azm, c.ap, c.radio)];
+  var h = c.ap / 2;
+  return [arco(c.base, c.azm - h / 2, h, c.radio), arco(c.base, c.azm + h / 2, h, c.radio)];
+}
+
+function proyectar(pts, ref) {
+  var k = Math.cos(ref.lat * RAD);
+  return pts.map(function (p) {
+    return { x: (p.lng - ref.lng) * RAD * R_T * k, y: (p.lat - ref.lat) * RAD * R_T };
+  });
+}
+function desproyectar(p, ref) {
+  var k = Math.cos(ref.lat * RAD);
+  return { lat: ref.lat + p.y / R_T / RAD, lng: ref.lng + p.x / (R_T * k) / RAD };
+}
+
+function areaFirma(p) {
+  var s = 0;
+  for (var i = 0; i < p.length; i++) { var j = (i + 1) % p.length; s += p[i].x * p[j].y - p[j].x * p[i].y; }
+  return s / 2;
+}
+function centroidePoly(p) {
+  var a = areaFirma(p), cx = 0, cy = 0;
+  for (var i = 0; i < p.length; i++) {
+    var j = (i + 1) % p.length, cr = p[i].x * p[j].y - p[j].x * p[i].y;
+    cx += (p[i].x + p[j].x) * cr; cy += (p[i].y + p[j].y) * cr;
+  }
+  return { x: cx / (6 * a), y: cy / (6 * a), a: a };
+}
+function orientar(p) { return areaFirma(p) < 0 ? p.slice().reverse() : p; }
+
+function lado(A, B, P) { return (B.x - A.x) * (P.y - A.y) - (B.y - A.y) * (P.x - A.x); }
+function cruce(S, E, A, B) {
+  var den = (S.x - E.x) * (A.y - B.y) - (S.y - E.y) * (A.x - B.x);
+  if (den === 0) return { x: E.x, y: E.y };
+  var t = ((S.x - A.x) * (A.y - B.y) - (S.y - A.y) * (A.x - B.x)) / den;
+  return { x: S.x + t * (E.x - S.x), y: S.y + t * (E.y - S.y) };
+}
+// Recorta "subj" con el polígono convexo "clip" (orientado antihorario).
+function recortar(subj, clip) {
+  var out = subj;
+  for (var i = 0; i < clip.length; i++) {
+    var A = clip[i], B = clip[(i + 1) % clip.length];
+    var entrada = out; out = [];
+    if (!entrada.length) break;
+    var S = entrada[entrada.length - 1];
+    for (var j = 0; j < entrada.length; j++) {
+      var E = entrada[j];
+      var eIn = lado(A, B, E) >= -1e-9, sIn = lado(A, B, S) >= -1e-9;
+      if (eIn) { if (!sIn) out.push(cruce(S, E, A, B)); out.push(E); }
+      else if (sIn) out.push(cruce(S, E, A, B));
+      S = E;
+    }
+  }
+  return out;
+}
+
+function interseccion(cs) {
+  var ref = cs[0].base;
+  var acc = piezas(cs[0]).map(function (pg) { return proyectar(pg, ref); });
+  for (var i = 1; i < cs.length; i++) {
+    var sig = piezas(cs[i]).map(function (pg) { return orientar(proyectar(pg, ref)); });
+    var nuevo = [];
+    acc.forEach(function (a) {
+      sig.forEach(function (b) {
+        var r = recortar(a, b);
+        if (r.length >= 3 && Math.abs(areaFirma(r)) > 1) nuevo.push(r);
+      });
+    });
+    acc = nuevo;
+    if (!acc.length) return null;
+  }
+  var A = 0, X = 0, Y = 0;
+  acc.forEach(function (pg) {
+    var m = centroidePoly(pg), a = Math.abs(m.a);
+    A += a; X += m.x * a; Y += m.y * a;
+  });
+  return {
+    polys: acc.map(function (pg) { return pg.map(function (p) { return desproyectar(p, ref); }); }),
+    area: A, cen: desproyectar({ x: X / A, y: Y / A }, ref), n: cs.length
+  };
+}
+
+function crearCaso(o) {
+  var base = (o.base && typeof o.base === 'object') ? o.base : parseCoords(o.base);
+  var c = {
+    codigo: String(o.codigo || '').trim() || 'S/N',
+    tipo: String(o.tipo || '').trim(),
+    nota: String(o.nota || '').trim(),
+    azm: parseNum(o.azm), radio: parseNum(o.radio),
+    ap: String(o.ap === null || o.ap === undefined ? '' : o.ap).trim() === '' ? 120 : parseNum(o.ap),
+    base: base, term: null, visible: true
+  };
+  var err = '';
+  if (!c.base) err = 'Coordenadas de la radio base no válidas. Usa: latitud, longitud (con punto decimal).';
+  else if (isNaN(c.azm) || c.azm < 0 || c.azm > 360) err = 'El azimut debe ser un número entre 0 y 360.';
+  else if (isNaN(c.radio) || c.radio <= 0) err = 'El radio debe ser un número mayor que 0.';
+  else if (isNaN(c.ap) || c.ap <= 0 || c.ap > 360) err = 'La apertura debe estar entre 1 y 360.';
+  else {
+    var t = o.term;
+    if (t && typeof t === 'object') c.term = t;
+    else if (t && String(t).trim() !== '') {
+      c.term = parseCoords(t);
+      if (!c.term) err = 'Coordenadas del terminal no válidas. Usa: latitud, longitud (con punto decimal).';
+    }
+  }
+  return err ? { err: err } : { c: c };
+}
+
+function parsearTabla(txt) {
+  txt = String(txt || '').replace(/^\uFEFF/, '');
+  var sep = txt.indexOf('\t') >= 0 ? '\t' : (txt.indexOf(';') >= 0 ? ';' : ',');
+  var out = [];
+  txt.split(/\r?\n/).forEach(function (linea, i) {
+    if (!linea.trim()) return;
+    var cells = linea.split(sep).map(function (x) { return x.trim().replace(/^"(.*)"$/, '$1').trim(); });
+    if (cells.every(function (x) { return x === ''; })) return;
+    out.push({ n: i + 1, cells: cells });
+  });
+  return out;
+}
+
+function filasACasos(filas) {
+  var res = { casos: [], errores: [] };
+  filas.forEach(function (f, k) {
+    var x = f.cells;
+    if (k === 0 && isNaN(parseNum(x[2]))) return;
+    var o = { codigo: x[0], tipo: x[1], base: mkCoord(parseNum(x[2]), parseNum(x[3])), azm: x[4], radio: x[5], ap: x[6], term: null, nota: x[9] };
+    var tl = String(x[7] || '').trim(), tg = String(x[8] || '').trim();
+    if (tl !== '' || tg !== '') {
+      o.term = mkCoord(parseNum(tl), parseNum(tg));
+      if (!o.term) { res.errores.push('Línea ' + f.n + ': coordenadas del terminal no válidas.'); return; }
+    }
+    var r = crearCaso(o);
+    if (r.err) res.errores.push('Línea ' + f.n + ': ' + r.err); else res.casos.push(r.c);
+  });
+  return res;
+}
+
+function kmlColor(hex, a) { var h = hex.replace('#', ''); return a + h.substr(4, 2) + h.substr(2, 2) + h.substr(0, 2); }
+function kmlAnillo(pts) {
+  var q = pts.slice();
+  q.push(pts[0]);
+  return '<Polygon><outerBoundaryIs><LinearRing><coordinates>' +
+    q.map(function (p) { return p.lng + ',' + p.lat + ',0'; }).join(' ') +
+    '</coordinates></LinearRing></outerBoundaryIs></Polygon>';
+}
+
+function generarKML(items, inter) {
+  var x = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Analisis de radio base</name>\n';
+  items.forEach(function (c, i) {
+    var col = COLORES[i % COLORES.length];
+    x += '<Style id="s' + i + '"><LineStyle><color>' + kmlColor(col, 'ff') + '</color><width>2</width></LineStyle><PolyStyle><color>' + kmlColor(col, '66') + '</color></PolyStyle></Style>\n';
+  });
+  x += '<Style id="sInter"><LineStyle><color>ff4d1de1</color><width>3</width></LineStyle><PolyStyle><color>994d1de1</color></PolyStyle></Style>\n';
+  items.forEach(function (c, i) {
+    var a = analizar(c);
+    var desc = (c.tipo ? 'Tipo ' + c.tipo + ' | ' : '') + 'Azimut ' + c.azm + ' | Radio ' + c.radio + ' m | Apertura ' + c.ap + (c.nota ? ' | ' + c.nota : '');
+    x += '<Placemark><name>' + esc('Sector celda ' + c.codigo) + '</name><description>' + esc(desc) + '</description><styleUrl>#s' + i + '</styleUrl>' + kmlAnillo(trayecto(c)) + '</Placemark>\n';
+    x += '<Placemark><name>' + esc('Radio base ' + c.codigo) + '</name><Point><coordinates>' + c.base.lng + ',' + c.base.lat + ',0</coordinates></Point></Placemark>\n';
+    x += '<Placemark><name>' + esc('Terminal movil' + (a.esReal ? '' : ' (estimado)') + ' - celda ' + c.codigo) + '</name><Point><coordinates>' + a.punto.lng + ',' + a.punto.lat + ',0</coordinates></Point></Placemark>\n';
+  });
+  if (inter) {
+    inter.polys.forEach(function (pg, k) {
+      x += '<Placemark><name>' + esc('Interseccion de ' + inter.n + ' celdas' + (inter.polys.length > 1 ? ' (parte ' + (k + 1) + ')' : '')) + '</name><styleUrl>#sInter</styleUrl>' + kmlAnillo(pg) + '</Placemark>\n';
+    });
+    x += '<Placemark><name>Centro de la interseccion</name><Point><coordinates>' + inter.cen.lng + ',' + inter.cen.lat + ',0</coordinates></Point></Placemark>\n';
+  }
+  return x + '</Document></kml>';
+}
+
+var CSV_CAB = ['codigo', 'tipo', 'latitud', 'longitud', 'azimut', 'radio_m', 'apertura', 'lat_terminal', 'lng_terminal', 'nota',
+               'punto_graficado', 'lat_punto', 'lng_punto', 'dist_base_punto_m', 'rumbo_base_punto', 'dentro_cobertura',
+               'area_sector_m2', 'lat_centroide', 'lng_centroide'];
+var CSV_NUM = [0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1];
+
+function csvCelda(v, esNum, dec) {
+  var s = (v === null || v === undefined) ? '' : String(v);
+  if (esNum) { if (dec === ',') s = s.replace('.', ','); }
+  else if (/^[=+\-@]/.test(s)) s = "'" + s;
+  if (/[;"\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function generarCSV(items, dec) {
+  var filas = [CSV_CAB.join(';')];
+  items.forEach(function (c) {
+    var a = analizar(c);
+    var cols = [c.codigo, c.tipo, c.base.lat, c.base.lng, c.azm, c.radio, c.ap,
+      c.term ? c.term.lat : '', c.term ? c.term.lng : '', c.nota,
+      a.esReal ? 'real' : 'estimado', a.punto.lat.toFixed(6), a.punto.lng.toFixed(6),
+      a.dist.toFixed(0), a.rumbo.toFixed(1), a.esReal ? (a.dentro ? 'SI' : 'NO') : '',
+      Math.round(a.area), a.cen.lat.toFixed(6), a.cen.lng.toFixed(6)];
+    filas.push(cols.map(function (v, i) { return csvCelda(v, CSV_NUM[i], dec); }).join(';'));
+  });
+  return filas.join('\r\n');
+}
+// ===END GEO===
+</script>
+
+<script>
+var map, capa, capaInter;
+var casos = [], borrador = null, editando = -1, inter = null;
+
+function $(id) { return document.getElementById(id); }
+function ll(p) { return [p.lat, p.lng]; }
+function setMsg(t, info) { var m = $('msg'); m.textContent = t || ''; m.className = info ? 'info' : ''; }
+
+function icono(svg, w, h, ax, ay) {
+  return L.icon({
+    iconUrl: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    iconSize: [w, h], iconAnchor: [ax, ay], popupAnchor: [0, -(ay - 6)]
+  });
+}
+var torreSvg = '<svg width="44" height="52" viewBox="0 0 44 52" xmlns="http://www.w3.org/2000/svg">' +
+  '<path d="M22 50 C22 50 4 30 4 18 A18 18 0 0 1 40 18 C40 30 22 50 22 50Z" fill="#D85A30" stroke="#fff" stroke-width="2"/>' +
+  '<path d="M22 13 L16 30 M22 13 L28 30 M18 24 H26 M17 29 H27" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>' +
+  '<circle cx="22" cy="11" r="2.5" fill="#fff"/>' +
+  '<path d="M14 8 A11 11 0 0 0 14 18 M30 8 A11 11 0 0 1 30 18" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>';
+function telSvg(fill) {
+  return '<svg width="40" height="50" viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M20 48 C20 48 3 29 3 17 A17 17 0 0 1 37 17 C37 29 20 48 20 48Z" fill="' + fill + '" stroke="#fff" stroke-width="2"/>' +
+    '<rect x="13" y="7" width="14" height="22" rx="3" fill="#fff"/>' +
+    '<rect x="15" y="10" width="10" height="13" fill="' + fill + '"/>' +
+    '<circle cx="20" cy="26" r="1.6" fill="' + fill + '"/></svg>';
+}
+var ICON_TORRE = icono(torreSvg, 44, 52, 22, 50);
+var ICON_TEL_REAL = icono(telSvg('#185FA5'), 40, 50, 20, 48);
+var ICON_TEL_EST = icono(telSvg('#7a8ca3'), 40, 50, 20, 48);
+
+function copiar(t, btn) {
+  function listo() {
+    if (!btn) return;
+    var o = btn.textContent; btn.textContent = 'Copiado';
+    setTimeout(function () { btn.textContent = o; }, 1200);
+  }
+  function viejo() {
+    var ta = document.createElement('textarea');
+    ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta); listo();
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(listo, viejo);
+  else viejo();
+}
+function usarEn(campo, texto) { $(campo).value = texto; map.closePopup(); setMsg(''); }
+
+function descargar(nombre, texto, mime) {
+  var blob = new Blob([texto], { type: mime });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = nombre;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1500);
+}
+
+function leerForm() {
+  var r = crearCaso({
+    codigo: $('codigo').value, tipo: $('tipo').value, base: $('base').value,
+    azm: $('azm').value, radio: $('radio').value, ap: $('ap').value,
+    term: $('term').value, nota: $('nota').value
+  });
+  setMsg(r.err || '');
+  return r.err ? null : r.c;
+}
+
+function limpiarCampos() {
+  ['codigo', 'tipo', 'base', 'azm', 'radio', 'ap', 'term', 'nota'].forEach(function (id) { $(id).value = ''; });
+}
+function actualizarBotonAdd() { $('bAdd').textContent = editando >= 0 ? 'Guardar cambios' : 'Agregar a la lista'; }
+function cambioLista() { inter = null; $('interRes').innerHTML = ''; }
+
+function dibujar(c, color, esBorr) {
+  var a = analizar(c);
+  var pts = trayecto(c).map(ll);
+  var poly = L.polygon(pts, { color: color, weight: esBorr ? 3 : 2, fillColor: color, fillOpacity: esBorr ? 0.38 : 0.25 }).addTo(capa);
+  poly.bindTooltip('Celda ' + esc(c.codigo) + ' · Azm ' + c.azm + '° · ' + c.radio + ' m', { sticky: true });
+  L.circle(ll(c.base), { radius: c.radio, color: '#ffffff', weight: 1, opacity: 0.8, fillOpacity: 0, interactive: false }).addTo(capa);
+  if (c.ap < 360) {
+    L.polyline([ll(c.base), ll(destino(c.base, c.azm, c.radio))], { color: '#ffffff', weight: 2, opacity: 0.9, interactive: false }).addTo(capa);
+  }
+  var mb = L.marker(ll(c.base), { icon: ICON_TORRE, title: 'Radio base ' + c.codigo }).addTo(capa);
+  mb.bindPopup('<b>Radio base · celda ' + esc(c.codigo) + '</b><br>' + c.base.lat.toFixed(6) + ', ' + c.base.lng.toFixed(6) +
+    '<br>' + (c.tipo ? 'Tipo ' + esc(c.tipo) + ' · ' : '') + 'Azm ' + c.azm + '° · ' + c.radio + ' m · apertura ' + c.ap + '°' +
+    (c.nota ? '<br>' + esc(c.nota) : ''));
+  if (a.dist > 1) {
+    var mt = L.marker(ll(a.punto), { icon: a.esReal ? ICON_TEL_REAL : ICON_TEL_EST, title: a.esReal ? 'Terminal móvil' : 'Terminal móvil (estimado)' }).addTo(capa);
+    mt.bindPopup('<b>Terminal móvil' + (a.esReal ? '' : ' (estimado)') + '</b><br>' + a.punto.lat.toFixed(6) + ', ' + a.punto.lng.toFixed(6) +
+      '<br>' + a.dist.toFixed(0) + ' m de la radio base · rumbo ' + a.rumbo.toFixed(0) + '°');
+    L.polyline([ll(c.base), ll(a.punto)], {
+      color: a.esReal ? '#ffeb3b' : '#ffffff', weight: 2, opacity: 0.95, dashArray: a.esReal ? null : '6 5', interactive: false
+    }).addTo(capa);
+  }
+  return { pts: pts, a: a };
+}
+
+function dibujarInter() {
+  capaInter.clearLayers();
+  if (!inter) return;
+  var pg = L.polygon(inter.polys.map(function (p) { return [p.map(ll)]; }),
+    { color: '#e11d4d', weight: 3, dashArray: '7 4', fillColor: '#e11d4d', fillOpacity: 0.45 }).addTo(capaInter);
+  pg.bindTooltip('Intersección de ' + inter.n + ' celdas · ' + Math.round(inter.area).toLocaleString('es-EC') + ' m²', { sticky: true });
+  var cm = L.circleMarker(ll(inter.cen), { radius: 7, color: '#ffffff', weight: 2, fillColor: '#e11d4d', fillOpacity: 1 }).addTo(capaInter);
+  var t = inter.cen.lat.toFixed(6) + ', ' + inter.cen.lng.toFixed(6);
+  cm.bindPopup('<b>Centro de la intersección</b><br>' + t +
+    '<div class="pbtns"><button class="mini" onclick="copiar(\'' + t + '\', this)">Copiar</button></div>');
+}
+
+function mostrarResultado(c) {
+  var a = analizar(c), h = '';
+  h += '<div>Celda <b>' + esc(c.codigo) + '</b>' + (c.nota ? ' · ' + esc(c.nota) : '') + '</div>';
+  h += '<div>Área del sector: <b>' + Math.round(a.area).toLocaleString('es-EC') + ' m²</b></div>';
+  if (c.ap < 360) {
+    var t = a.cen.lat.toFixed(6) + ', ' + a.cen.lng.toFixed(6);
+    h += '<div>Centroide estimado: <b>' + t + '</b> (' + a.dCen.toFixed(0) + ' m de la antena) ' +
+      '<button class="mini" onclick="copiar(\'' + t + '\', this)">Copiar</button></div>';
+  }
+  if (a.esReal) {
+    h += '<div>Distancia base → terminal: <b>' + a.dist.toFixed(0) + ' m</b></div>';
+    h += '<div>Rumbo base → terminal: <b>' + a.rumbo.toFixed(0) + '°</b> (' + a.desv.toFixed(0) + '° respecto al azimut)</div>';
+    h += '<div>' + (a.dentro
+      ? '<span class="ok">El terminal está dentro de la cobertura de la celda.</span>'
+      : '<span class="no">El terminal está fuera del sector (' +
+        (a.dist > c.radio ? 'excede el radio en ' + (a.dist - c.radio).toFixed(0) + ' m' : 'fuera de la apertura, a ' + a.desv.toFixed(0) + '° del azimut') +
+        ').</span>') + '</div>';
+  } else {
+    h += '<div>Terminal: no ingresado, se muestra el punto estimado.</div>';
+  }
+  h += '<div class="hint">El punto estimado es referencial: señala una zona probable, no una ubicación exacta.</div>';
+  $('res').innerHTML = h;
+}
+
+function render(ajustar) {
+  capa.clearLayers();
+  var b = L.latLngBounds([]), hay = false;
+  casos.forEach(function (c, i) {
+    if (!c.visible || i === editando) return;
+    var d = dibujar(c, COLORES[i % COLORES.length], false);
+    d.pts.forEach(function (p) { b.extend(p); });
+    b.extend(ll(d.a.punto)); hay = true;
+  });
+  if (borrador) {
+    var d2 = dibujar(borrador, COLORES[casos.length % COLORES.length], true);
+    d2.pts.forEach(function (p) { b.extend(p); });
+    b.extend(ll(d2.a.punto)); hay = true;
+    mostrarResultado(borrador);
+  }
+  dibujarInter();
+  if (hay && ajustar && b.isValid()) map.fitBounds(b, { padding: [50, 50], maxZoom: 18 });
+  renderLista();
+}
+
+function renderLista() {
+  var l = $('lista');
+  l.innerHTML = '';
+  if (!casos.length) { l.innerHTML = '<div class="hint">Aún no hay celdas en la lista.</div>'; return; }
+  casos.forEach(function (c, i) {
+    var a = analizar(c);
+    var div = document.createElement('div');
+    div.className = 'item';
+
+    var cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = c.visible; cb.title = 'Mostrar en el mapa y usar en la intersección';
+    cb.onchange = function () { c.visible = cb.checked; cambioLista(); render(false); };
+
+    var sw = document.createElement('span');
+    sw.className = 'sw'; sw.style.background = COLORES[i % COLORES.length];
+
+    var t = document.createElement('span');
+    t.className = 't';
+    t.innerHTML = '<b>Celda ' + esc(c.codigo) + '</b>' + (c.tipo ? ' · ' + esc(c.tipo) : '') +
+      '<br>' + c.base.lat.toFixed(5) + ', ' + c.base.lng.toFixed(5) +
+      '<br>Azm ' + c.azm + '° · ' + c.radio + ' m · ' + c.ap + '°' +
+      (c.nota ? '<br>' + esc(c.nota) : '') +
+      (a.esReal ? '<br>Terminal: ' + (a.dentro ? 'dentro' : 'fuera') + ' · ' + a.dist.toFixed(0) + ' m' : '');
+
+    var acts = document.createElement('span');
+    acts.className = 'acts';
+    var bz = document.createElement('button'); bz.className = 'sec mini'; bz.textContent = 'Ver';
+    bz.onclick = function () {
+      var b = L.latLngBounds(trayecto(c).map(ll));
+      map.fitBounds(b, { padding: [50, 50], maxZoom: 18 });
+    };
+    var be = document.createElement('button'); be.className = 'sec mini'; be.textContent = 'Editar';
+    be.onclick = function () { editar(i); };
+    var bx = document.createElement('button'); bx.className = 'warn mini'; bx.textContent = 'Quitar';
+    bx.onclick = function () {
+      casos.splice(i, 1);
+      if (editando === i) { editando = -1; actualizarBotonAdd(); }
+      else if (editando > i) editando--;
+      cambioLista(); render(false);
+    };
+    acts.appendChild(bz); acts.appendChild(be); acts.appendChild(bx);
+
+    div.appendChild(cb); div.appendChild(sw); div.appendChild(t); div.appendChild(acts);
+    l.appendChild(div);
+  });
+}
+
+function editar(i) {
+  var c = casos[i];
+  $('codigo').value = c.codigo === 'S/N' ? '' : c.codigo;
+  $('tipo').value = c.tipo;
+  $('base').value = c.base.lat + ', ' + c.base.lng;
+  $('azm').value = c.azm;
+  $('radio').value = c.radio;
+  $('ap').value = c.ap;
+  $('term').value = c.term ? c.term.lat + ', ' + c.term.lng : '';
+  $('nota').value = c.nota;
+  editando = i; borrador = null;
+  actualizarBotonAdd();
+  setMsg('Editando la celda ' + c.codigo + ': cambia los datos y pulsa "Guardar cambios".', true);
+  render(false);
+  $('side').scrollTop = 0;
+}
+
+function itemsExport() {
+  var items = casos.slice();
+  if (borrador) items.push(borrador);
+  return items;
+}
+
+function calcularInter() {
+  var vis = casos.filter(function (c) { return c.visible; });
+  if (vis.length < 2) {
+    $('interRes').innerHTML = '<span class="no">Marca al menos 2 celdas con la casilla de la lista para calcular la intersección.</span>';
+    return;
+  }
+  var r = interseccion(vis);
+  if (!r) {
+    inter = null;
+    $('interRes').innerHTML = '<span class="no">Las celdas marcadas no tienen una zona en común.</span>';
+    render(false);
+    return;
+  }
+  inter = r;
+  var t = r.cen.lat.toFixed(6) + ', ' + r.cen.lng.toFixed(6);
+  $('interRes').innerHTML = '<div>Celdas cruzadas: <b>' + r.n + '</b></div>' +
+    '<div>Área común: <b>' + Math.round(r.area).toLocaleString('es-EC') + ' m²</b></div>' +
+    '<div>Centro de la zona: <b>' + t + '</b> <button class="mini" onclick="copiar(\'' + t + '\', this)">Copiar</button></div>' +
+    '<div class="hint">La zona roja es donde se cruzan todos los sectores marcados.</div>';
+  render(false);
+  var b = L.latLngBounds([]);
+  r.polys.forEach(function (pg) { pg.forEach(function (p) { b.extend(ll(p)); }); });
+  if (b.isValid()) map.fitBounds(b, { padding: [60, 60], maxZoom: 19 });
+}
+
+function importar() {
+  var txt = $('impTxt').value;
+  var m = $('impMsg');
+  if (!txt.trim()) { m.innerHTML = '<span class="no">Pega primero las filas de Excel o abre un archivo CSV.</span>'; return; }
+  var res = filasACasos(parsearTabla(txt));
+  res.casos.forEach(function (c) { casos.push(c); });
+  var h = '';
+  if (res.casos.length) h += '<div class="ok">Se cargaron ' + res.casos.length + ' celda(s).</div>';
+  if (res.errores.length) {
+    h += '<div class="no">' + res.errores.length + ' fila(s) con error:</div>';
+    res.errores.slice(0, 8).forEach(function (e) { h += '<div>' + esc(e) + '</div>'; });
+    if (res.errores.length > 8) h += '<div>…y ' + (res.errores.length - 8) + ' más.</div>';
+  }
+  if (!res.casos.length && !res.errores.length) h = '<span class="no">No se encontraron filas con datos.</span>';
+  m.innerHTML = h;
+  if (res.casos.length) {
+    if (!res.errores.length) $('impTxt').value = '';
+    cambioLista(); render(true);
+  }
+}
+
+function iniciar() {
+  map = L.map('map', { maxZoom: 20 }).setView([-1.83, -78.18], 7);
+
+  function esriImg() {
+    return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 20, maxNativeZoom: 19, attribution: 'Imágenes © Esri, Maxar, Earthstar Geographics' });
+  }
+  function esriEtq() {
+    return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 20, maxNativeZoom: 19 });
+  }
+  var hibrido = L.layerGroup([esriImg(), esriEtq()]);
+  var satelite = esriImg();
+  var calles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { maxZoom: 20, maxNativeZoom: 19, attribution: '© OpenStreetMap' });
+  hibrido.addTo(map);
+  L.control.layers({ 'Híbrido': hibrido, 'Satélite': satelite, 'Calles': calles }, null, { position: 'topright' }).addTo(map);
+  L.control.scale({ imperial: false }).addTo(map);
+
+  capa = L.layerGroup().addTo(map);
+  capaInter = L.layerGroup().addTo(map);
+
+  map.on('click', function (e) {
+    var p = e.latlng.wrap();
+    var t = p.lat.toFixed(6) + ', ' + p.lng.toFixed(6);
+    L.popup().setLatLng(p).setContent(
+      '<b>' + t + '</b><div class="pbtns">' +
+      '<button class="mini" onclick="copiar(\'' + t + '\', this)">Copiar</button>' +
+      '<button class="mini" onclick="usarEn(\'base\', \'' + t + '\')">Usar como radio base</button>' +
+      '<button class="mini" onclick="usarEn(\'term\', \'' + t + '\')">Usar como terminal</button></div>'
+    ).openOn(map);
+  });
+
+  $('bGraf').onclick = function () {
+    var c = leerForm();
+    if (!c) return;
+    borrador = c;
+    render(true);
+  };
+  $('bAdd').onclick = function () {
+    var c = leerForm();
+    if (!c) return;
+    if (editando >= 0) { c.visible = casos[editando].visible; casos[editando] = c; }
+    else casos.push(c);
+    editando = -1; borrador = null;
+    limpiarCampos(); actualizarBotonAdd(); cambioLista();
+    render(true);
+    mostrarResultado(c);
+  };
+  $('bLimpiar').onclick = function () {
+    limpiarCampos(); editando = -1; borrador = null;
+    actualizarBotonAdd(); setMsg(''); $('res').innerHTML = '';
+    render(false);
+  };
+  $('bVaciar').onclick = function () {
+    if (!casos.length && !borrador) return;
+    if (!confirm('¿Vaciar la lista de celdas?')) return;
+    casos = []; borrador = null; editando = -1;
+    actualizarBotonAdd(); cambioLista(); $('res').innerHTML = ''; setMsg('');
+    render(false);
+  };
+  $('bInter').onclick = calcularInter;
+  $('bInterQ').onclick = function () { cambioLista(); render(false); };
+  $('bImp').onclick = importar;
+  $('bPlantilla').onclick = function () {
+    descargar('plantilla_celdas.csv', '\uFEFFcodigo;tipo;latitud;longitud;azimut;radio_m;apertura;lat_terminal;lng_terminal;nota\r\n', 'text/csv;charset=utf-8');
+  };
+  $('fileCsv').onchange = function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function () { $('impTxt').value = String(rd.result); importar(); };
+    rd.readAsText(f);
+    this.value = '';
+  };
+  $('bKml').onclick = function () {
+    var items = itemsExport();
+    if (!items.length) { setMsg('No hay celdas para exportar. Grafica o agrega al menos una.'); return; }
+    descargar('analisis_radio_base.kml', generarKML(items, inter), 'application/vnd.google-earth.kml+xml');
+  };
+  $('bCsv').onclick = function () {
+    var items = itemsExport();
+    if (!items.length) { setMsg('No hay celdas para exportar. Grafica o agrega al menos una.'); return; }
+    descargar('analisis_radio_base.csv', '\uFEFF' + generarCSV(items, $('dec').value), 'text/csv;charset=utf-8');
+  };
+
+  ['codigo', 'tipo', 'base', 'azm', 'radio', 'ap', 'term', 'nota'].forEach(function (id) {
+    $(id).addEventListener('keydown', function (e) { if (e.key === 'Enter') $('bGraf').click(); });
+  });
+  window.addEventListener('resize', function () { map.invalidateSize(); });
+
+  render(false);
+}
+iniciar();
+</script>
+</body>
+</html>
